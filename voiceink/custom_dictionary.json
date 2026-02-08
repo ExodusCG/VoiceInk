@@ -1,0 +1,47 @@
+{
+  "version": "1.0",
+  "terms": [
+    {
+      "term": "VoiceInk",
+      "aliases": ["voiceing", "voice ink", "voicelink", "voice link"],
+      "category": "产品名",
+      "pinyin": "",
+      "enabled": true
+    },
+    {
+      "term": "Whisper",
+      "aliases": ["whistle", "wisper", "whisperer"],
+      "category": "技术术语",
+      "pinyin": "",
+      "enabled": true
+    },
+    {
+      "term": "GitHub",
+      "aliases": ["git hub", "get hub", "gethub"],
+      "category": "产品名",
+      "pinyin": "",
+      "enabled": true
+    },
+    {
+      "term": "Python",
+      "aliases": ["paython", "pyton"],
+      "category": "编程语言",
+      "pinyin": "",
+      "enabled": true
+    },
+    {
+      "term": "ChatGPT",
+      "aliases": ["chat gpt", "chatGBT", "chatgbt"],
+      "category": "产品名",
+      "pinyin": "",
+      "enabled": true
+    },
+    {
+      "term": "Transformer",
+      "aliases": ["transformer", "trans former", "transfer"],
+      "category": "技术术语",
+      "pinyin": "",
+      "enabled": true
+    }
+  ]
+}

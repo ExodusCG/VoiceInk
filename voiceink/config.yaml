@@ -1,0 +1,50 @@
+app:
+  language: auto
+  hotkey_push_to_talk: right alt
+  hotkey_toggle: ctrl+shift+v
+  auto_start: false
+  log_level: INFO
+audio:
+  device: default
+  sample_rate: 16000
+  channels: 1
+  chunk_duration_ms: 500
+  vad_threshold: 0.5
+  silence_duration_ms: 800
+  max_recording_seconds: 300
+asr:
+  backend: paraformer_onnx
+  model_size: large
+  model_path: ''
+  language: zh
+  n_threads: 4
+  stream_interval_seconds: 2
+  beam_size: 5
+llm:
+  backend: llama_cpp
+  model_path: ''
+  model_name: Qwen3-0.6B-Q8_0.gguf
+  n_ctx: 2048
+  n_threads: 4
+  temperature: 0.1
+  top_p: 0.9
+  max_polish_length: 500
+  api:
+    base_url: https://api.openai.com/v1
+    api_key: ''
+    model: gpt-4o-mini
+output:
+  method: keyboard
+  typing_delay_ms: 5
+  paste_delay_ms: 100
+dictionary:
+  path: custom_dictionary.json
+  max_asr_prompt_terms: 50
+  enabled: true
+ui:
+  status_indicator:
+    enabled: true
+    position: top_right
+    opacity: 0.85
+    width: 350
+    height: 80

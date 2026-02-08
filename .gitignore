@@ -1,0 +1,42 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Models (large binary files, download on first run)
+models/
+
+# User data
+.voiceink/
+
+# Logs
+*.log
+
+# IDE / Editor
+.claude/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+NUL
+
+# Test / Cache
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Release artifacts
+VoiceInk-release.zip
