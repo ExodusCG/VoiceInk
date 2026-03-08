@@ -448,14 +448,84 @@ class AudioCapture:
         logger.warning(f"未找到设备 '{device_str}'，回退到默认设备")
         return None
 
+    @staticmethod
+    def _get_device_priority(dev_name: str) -> int:
+        """
+        根据设备名称返回优先级分数（越高越优先）
+
+        优先级策略：
+        - Windows 声音映射器最高优先级 (110) - 它跟随系统默认设置
+        - 麦克风设备 (100)
+        - USB 麦克风 (90)
+        - 蓝牙耳机麦克风 (80)
+        - 主声音捕获驱动程序 (75)
+        - 耳机 (70)
+        - 默认设备 (50)
+        - 线路输入/立体声混音最低优先级 (10)
+        - 其他设备 (30)
+
+        Args:
+            dev_name: 设备名称
+
+        Returns:
+            优先级分数
+        """
+        name_lower = dev_name.lower()
+
+        # 排除的设备类型（通常不是用于语音输入的）
+        exclude_keywords = [
+            "line input", "line in", "线路输入",
+            "stereo mix", "立体声混音",
+            "what u hear", "loopback",
+            "spdif", "digital",
+        ]
+        for kw in exclude_keywords:
+            if kw in name_lower:
+                return 10  # 最低优先级
+
+        # Windows 声音映射器 - 跟随系统默认设置
+        if "声音映射器" in dev_name or "sound mapper" in name_lower:
+            return 110  # 最高优先级
+
+        # 优先的麦克风设备
+        mic_keywords = [
+            "microphone", "mic input", "麦克风", "话筒",
+        ]
+        for kw in mic_keywords:
+            if kw in name_lower:
+                return 100
+
+        # USB 麦克风
+        if "usb" in name_lower and ("mic" in name_lower or "audio" in name_lower):
+            return 90
+
+        # 蓝牙耳机/麦克风
+        if "bluetooth" in name_lower or "bt " in name_lower or "蓝牙" in name_lower:
+            return 80
+
+        # 主声音捕获驱动程序
+        if "主声音捕获" in dev_name or "primary sound capture" in name_lower:
+            return 75
+
+        # 耳机（可能有麦克风）
+        if "headset" in name_lower or "headphone" in name_lower or "耳机" in name_lower:
+            return 70
+
+        # 摄像头内置麦克风
+        if "webcam" in name_lower or "camera" in name_lower or "摄像" in name_lower:
+            return 60
+
+        # 其他设备
+        return 30
+
     def _find_working_device(self) -> Optional[int]:
         """
         探测系统中实际可用的输入设备。
 
-        依次尝试：
-        1. 系统默认输入设备
-        2. 各 HostAPI 的默认输入设备（MME、WASAPI、DirectSound 等）
-        3. 所有枚举到的输入设备
+        智能优先级策略：
+        1. 收集所有可用输入设备
+        2. 按设备类型排序（麦克风 > USB > 蓝牙 > 默认 > 线路输入）
+        3. 逐个验证设备可用性
 
         对每个候选设备，尝试以目标采样率打开 InputStream 并验证数据可达。
         如果目标采样率不支持，再用设备默认采样率重试。
@@ -463,49 +533,42 @@ class AudioCapture:
         Returns:
             可用设备的索引，None 表示所有设备均不可用
         """
-        # 收集候选设备索引（按优先级排列，去重）
-        candidates: list[int] = []
-        seen: set[int] = set()
+        # 收集所有输入设备及其信息
+        all_devices: list[tuple[int, str, int]] = []  # (idx, name, priority)
 
-        def _add(idx):
-            if idx is not None and idx >= 0 and idx not in seen:
-                seen.add(idx)
-                candidates.append(idx)
-
-        # 优先级 1：系统默认
-        try:
-            _add(sd.default.device[0])
-        except Exception:
-            pass
-
-        # 优先级 2：各 HostAPI 的默认输入
-        try:
-            for api in sd.query_hostapis():
-                _add(api.get("default_input_device"))
-        except Exception:
-            pass
-
-        # 优先级 3：所有输入设备
         try:
             for i, dev in enumerate(sd.query_devices()):
                 if dev["max_input_channels"] > 0:
-                    _add(i)
-        except Exception:
-            pass
+                    dev_name = dev["name"]
+                    priority = self._get_device_priority(dev_name)
+                    all_devices.append((i, dev_name, priority))
+        except Exception as e:
+            logger.error(f"枚举音频设备失败: {e}")
+            return None
+
+        if not all_devices:
+            logger.error("自动探测: 未找到任何输入设备")
+            return None
+
+        # 按优先级排序（高优先级在前）
+        all_devices.sort(key=lambda x: x[2], reverse=True)
+
+        logger.info("自动探测: 发现 %d 个输入设备，按优先级排序:", len(all_devices))
+        for idx, name, priority in all_devices[:5]:  # 只显示前5个
+            logger.info("  [%d] %s (优先级=%d)", idx, name, priority)
 
         # 逐个探测
-        for idx in candidates:
+        for idx, dev_name, priority in all_devices:
             try:
                 dev_info = sd.query_devices(idx)
-                dev_name = dev_info["name"]
             except Exception:
                 continue
 
             # 尝试用目标采样率（16kHz）
             if self._try_open_device(idx, self._sample_rate):
                 logger.info(
-                    "自动探测: 设备 [%d] %s 可用 (采样率=%dHz)",
-                    idx, dev_name, self._sample_rate,
+                    "自动探测: 选择设备 [%d] %s (采样率=%dHz, 优先级=%d)",
+                    idx, dev_name, self._sample_rate, priority,
                 )
                 return idx
 
@@ -514,8 +577,8 @@ class AudioCapture:
             if native_rate > 0 and native_rate != self._sample_rate:
                 if self._try_open_device(idx, native_rate):
                     logger.info(
-                        "自动探测: 设备 [%d] %s 可用 (原生采样率=%dHz)",
-                        idx, dev_name, native_rate,
+                        "自动探测: 选择设备 [%d] %s (原生采样率=%dHz, 优先级=%d)",
+                        idx, dev_name, native_rate, priority,
                     )
                     return idx
 
@@ -732,52 +795,43 @@ class AudioCapture:
         """
         自动探测可用设备并打开音频流。
 
-        依次尝试候选设备的目标采样率和原生采样率。
+        使用智能优先级策略：麦克风 > USB > 蓝牙 > 默认 > 线路输入
 
         Returns:
             InputStream 对象，或所有设备都不可用时返回 None
         """
-        # 收集候选设备索引（按优先级排列，去重）
-        candidates: list[int] = []
-        seen: set[int] = set()
+        # 收集所有输入设备及其信息
+        all_devices: list[tuple[int, str, int]] = []  # (idx, name, priority)
 
-        def _add(idx):
-            if idx is not None and idx >= 0 and idx not in seen:
-                seen.add(idx)
-                candidates.append(idx)
-
-        # 优先级 1：系统默认
-        try:
-            _add(sd.default.device[0])
-        except Exception:
-            pass
-
-        # 优先级 2：各 HostAPI 的默认输入
-        try:
-            for api in sd.query_hostapis():
-                _add(api.get("default_input_device"))
-        except Exception:
-            pass
-
-        # 优先级 3：所有输入设备
         try:
             for i, dev in enumerate(sd.query_devices()):
                 if dev["max_input_channels"] > 0:
-                    _add(i)
-        except Exception:
-            pass
+                    dev_name = dev["name"]
+                    priority = self._get_device_priority(dev_name)
+                    all_devices.append((i, dev_name, priority))
+        except Exception as e:
+            logger.error(f"枚举音频设备失败: {e}")
+            return None
 
-        for idx in candidates:
+        if not all_devices:
+            return None
+
+        # 按优先级排序（高优先级在前）
+        all_devices.sort(key=lambda x: x[2], reverse=True)
+
+        for idx, dev_name, priority in all_devices:
             try:
                 dev_info = sd.query_devices(idx)
-                dev_name = dev_info["name"]
             except Exception:
                 continue
 
             # 先试目标采样率
             stream = self._try_open_stream(idx, self._sample_rate)
             if stream is not None:
-                logger.info("自动选择设备 [%d] %s (%dHz)", idx, dev_name, self._sample_rate)
+                logger.info(
+                    "自动选择设备 [%d] %s (%dHz, 优先级=%d)",
+                    idx, dev_name, self._sample_rate, priority,
+                )
                 self._device = idx
                 return stream
 
@@ -787,8 +841,8 @@ class AudioCapture:
                 stream = self._try_open_stream(idx, native_rate)
                 if stream is not None:
                     logger.info(
-                        "自动选择设备 [%d] %s (原生%dHz, 将重采样到%dHz)",
-                        idx, dev_name, native_rate, self._sample_rate,
+                        "自动选择设备 [%d] %s (原生%dHz, 将重采样到%dHz, 优先级=%d)",
+                        idx, dev_name, native_rate, self._sample_rate, priority,
                     )
                     self._device = idx
                     return stream

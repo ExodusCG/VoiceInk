@@ -20,8 +20,61 @@ import json
 import signal
 import logging
 import threading
+import tempfile
+import atexit
 from pathlib import Path
 from typing import Optional
+
+# ---------------------------------------------------------------------------
+# 单实例检测 - 在导入其他模块前执行
+# ---------------------------------------------------------------------------
+def _check_single_instance():
+    """
+    检查是否已有 VoiceInk 实例在运行。
+    使用锁文件 + PID 验证的方式。
+    """
+    lock_file = Path(tempfile.gettempdir()) / "voiceink.lock"
+
+    # 检查锁文件
+    if lock_file.exists():
+        try:
+            old_pid = int(lock_file.read_text().strip())
+            # 检查进程是否存在
+            if sys.platform == "win32":
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
+                handle = kernel32.OpenProcess(0x1000, False, old_pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+                if handle:
+                    kernel32.CloseHandle(handle)
+                    print(f"[INFO] VoiceInk is already running (PID: {old_pid})")
+                    print("       Please check the system tray icon.")
+                    sys.exit(0)
+            else:
+                # Unix: 检查进程是否存在
+                try:
+                    os.kill(old_pid, 0)
+                    print(f"[INFO] VoiceInk is already running (PID: {old_pid})")
+                    sys.exit(0)
+                except OSError:
+                    pass  # 进程不存在
+        except (ValueError, FileNotFoundError):
+            pass  # 锁文件损坏或不存在
+
+    # 创建锁文件
+    lock_file.write_text(str(os.getpid()))
+
+    # 注册退出时清理
+    def cleanup_lock():
+        try:
+            if lock_file.exists():
+                lock_file.unlink()
+        except Exception:
+            pass
+
+    atexit.register(cleanup_lock)
+
+# 执行单实例检测
+_check_single_instance()
 
 # ---------------------------------------------------------------------------
 # 确保项目根目录在 sys.path 中，以便直接运行此文件时能正确导入
@@ -147,17 +200,29 @@ class VoiceInkApp:
         检查所需模型文件是否存在，不存在则提示用户下载。
 
         检查的模型：
-        - ASR 模型：根据 config.asr.model_size 确定
+        - ASR 模型：根据 config.asr.backend 和 config.asr.model_size 确定
+          - sensevoice_onnx: 使用 sensevoice/int8 模型
+          - whisper_cpp/faster_whisper: 使用 asr/{model_size} 模型
         - LLM 模型：根据 config.llm.model_name 确定（仅当 LLM 后端不是 "disabled" 或 "api" 时）
         """
         default_model_dir = self._model_downloader.get_default_model_dir()
 
         # ---- 检查 ASR 模型 ----
-        asr_model_name = self._config.asr.model_size  # 如 "base"
-        default_asr_dir = str(Path(default_model_dir) / "asr")
+        asr_backend = self._config.asr.backend.lower()
+
+        # 根据后端类型确定模型类型和名称
+        if asr_backend == "sensevoice_onnx":
+            # SenseVoice 使用独立的模型类型
+            asr_model_type = "sensevoice"
+            asr_model_name = "int8"
+            default_asr_dir = str(Path(default_model_dir) / "asr" / "sensevoice")
+        else:
+            # Whisper 系列使用 asr 模型类型
+            asr_model_type = "asr"
+            asr_model_name = self._config.asr.model_size  # 如 "base"
+            default_asr_dir = str(Path(default_model_dir) / "asr")
 
         # model_path 可能是目录、文件路径、已损坏的路径或空字符串
-        # check_model_exists / get_model_filepath 需要的是 *目录*
         raw_asr_path = self._config.asr.model_path
         asr_model_dir = None  # None 表示已确定文件路径，无需进一步处理
 
@@ -171,8 +236,7 @@ class VoiceInkApp:
                 # 是一个存在的目录 → 作为 target_dir
                 asr_model_dir = str(p)
             else:
-                # 路径不存在（可能是被污染的路径或尚未创建的目录）
-                # 不信任此路径，回退到默认 ASR 目录
+                # 路径不存在，使用默认目录
                 logger.warning(
                     "ASR model_path 不存在: %s，使用默认目录: %s",
                     raw_asr_path, default_asr_dir,
@@ -182,17 +246,24 @@ class VoiceInkApp:
             asr_model_dir = default_asr_dir
 
         if asr_model_dir is not None:
-            if not self._model_downloader.check_model_exists("asr", asr_model_name, asr_model_dir):
-                logger.info("ASR 模型不存在，需要下载: %s", asr_model_name)
-                self._download_model_with_progress("asr", asr_model_name, asr_model_dir)
+            if not self._model_downloader.check_model_exists(asr_model_type, asr_model_name, asr_model_dir):
+                logger.info("ASR 模型不存在，需要下载: %s/%s", asr_model_type, asr_model_name)
+                self._download_model_with_progress(asr_model_type, asr_model_name, asr_model_dir)
 
-            # 无论下载还是已存在，都把 model_path 设为文件完整路径
-            model_filepath = self._model_downloader.get_model_filepath("asr", asr_model_name, asr_model_dir)
+            # 更新配置中的模型路径
+            model_filepath = self._model_downloader.get_model_filepath(asr_model_type, asr_model_name, asr_model_dir)
             if model_filepath:
                 self._config.asr.model_path = model_filepath
                 logger.info("ASR 模型路径: %s", model_filepath)
             else:
-                logger.info("ASR 模型已就绪: %s (%s)", asr_model_name, asr_model_dir)
+                # 对于多文件模型（如 SenseVoice），路径是目录
+                info = self._model_downloader.get_model_info(asr_model_type, asr_model_name)
+                if info:
+                    model_dir_path = Path(asr_model_dir) / info["filename"]
+                    self._config.asr.model_path = str(model_dir_path)
+                    logger.info("ASR 模型已就绪: %s", model_dir_path)
+                else:
+                    logger.info("ASR 模型已就绪: %s (%s)", asr_model_name, asr_model_dir)
 
         # ---- 检查 LLM 模型（仅本地后端需要） ----
         llm_backend = self._config.llm.backend.lower()
@@ -424,29 +495,50 @@ class VoiceInkApp:
 
         当前注册的快捷键：
         - Push-to-Talk (hotkey_push_to_talk): 按住开始录音，释放停止录音
-        - Toggle (hotkey_toggle): 按下切换录音状态（可选，暂不实现）
+        - Toggle (hotkey_toggle): 按一次开始录音，再按一次停止录音
         """
         ptt_key = self._config.hotkey_push_to_talk
+        toggle_key = self._config.hotkey_toggle
 
-        if self._pipeline is not None:
-            # Pipeline 可用：绑定真实的录音控制
-            success = self._hotkey_manager.register_push_to_talk(
-                key=ptt_key,
-                on_press=self._on_ptt_press,
-                on_release=self._on_ptt_release,
-            )
-        else:
-            # Pipeline 不可用：绑定占位回调，便于调试
-            success = self._hotkey_manager.register_push_to_talk(
-                key=ptt_key,
-                on_press=lambda: logger.info("Push-to-Talk 按下 (Pipeline 未就绪)"),
-                on_release=lambda: logger.info("Push-to-Talk 释放 (Pipeline 未就绪)"),
-            )
+        # ---- 注册 Push-to-Talk 快捷键 ----
+        if ptt_key:
+            if self._pipeline is not None:
+                success = self._hotkey_manager.register_push_to_talk(
+                    key=ptt_key,
+                    on_press=self._on_ptt_press,
+                    on_release=self._on_ptt_release,
+                )
+            else:
+                success = self._hotkey_manager.register_push_to_talk(
+                    key=ptt_key,
+                    on_press=lambda: logger.info("Push-to-Talk 按下 (Pipeline 未就绪)"),
+                    on_release=lambda: logger.info("Push-to-Talk 释放 (Pipeline 未就绪)"),
+                )
 
-        if success:
-            logger.info("Push-to-Talk 快捷键已注册: %s", ptt_key)
-        else:
-            logger.error("Push-to-Talk 快捷键注册失败: %s", ptt_key)
+            if success:
+                logger.info("Push-to-Talk 快捷键已注册: %s", ptt_key)
+            else:
+                logger.error("Push-to-Talk 快捷键注册失败: %s", ptt_key)
+
+        # ---- 注册 Toggle 快捷键 ----
+        if toggle_key:
+            if self._pipeline is not None:
+                success = self._hotkey_manager.register_toggle(
+                    key=toggle_key,
+                    on_start=self._on_toggle_start,
+                    on_stop=self._on_toggle_stop,
+                )
+            else:
+                success = self._hotkey_manager.register_toggle(
+                    key=toggle_key,
+                    on_start=lambda: logger.info("Toggle 开始 (Pipeline 未就绪)"),
+                    on_stop=lambda: logger.info("Toggle 停止 (Pipeline 未就绪)"),
+                )
+
+            if success:
+                logger.info("Toggle 快捷键已注册: %s", toggle_key)
+            else:
+                logger.error("Toggle 快捷键注册失败: %s", toggle_key)
 
     def _on_ptt_press(self):
         """
@@ -474,6 +566,40 @@ class VoiceInkApp:
             return
 
         logger.debug("Push-to-Talk 释放 → 停止录音")
+        try:
+            if hasattr(self._pipeline, 'stop_recording'):
+                self._pipeline.stop_recording()
+            elif hasattr(self._pipeline, 'stop'):
+                self._pipeline.stop()
+        except Exception as e:
+            logger.error("停止录音失败: %s", e, exc_info=True)
+
+    def _on_toggle_start(self):
+        """
+        Toggle 模式开始回调：开始录音。
+        """
+        if self._pipeline is None:
+            logger.warning("Pipeline 未初始化，无法开始录音")
+            return
+
+        logger.debug("Toggle 开始 → 开始录音")
+        try:
+            if hasattr(self._pipeline, 'start_recording'):
+                self._pipeline.start_recording()
+            elif hasattr(self._pipeline, 'start'):
+                self._pipeline.start()
+        except Exception as e:
+            logger.error("开始录音失败: %s", e, exc_info=True)
+
+    def _on_toggle_stop(self):
+        """
+        Toggle 模式停止回调：停止录音并开始处理。
+        """
+        if self._pipeline is None:
+            logger.warning("Pipeline 未初始化，无法停止录音")
+            return
+
+        logger.debug("Toggle 停止 → 停止录音")
         try:
             if hasattr(self._pipeline, 'stop_recording'):
                 self._pipeline.stop_recording()
@@ -590,7 +716,11 @@ class VoiceInkApp:
             self.on_llm_change(new_config.llm.backend)
 
         # 如果快捷键变更了，重新注册
-        if old_config.hotkey_push_to_talk != new_config.hotkey_push_to_talk:
+        hotkey_changed = (
+            old_config.hotkey_push_to_talk != new_config.hotkey_push_to_talk
+            or old_config.hotkey_toggle != new_config.hotkey_toggle
+        )
+        if hotkey_changed:
             logger.info("快捷键已变更，重新注册...")
             self._hotkey_manager.unregister_all()
             self._register_hotkeys()
@@ -625,7 +755,7 @@ class VoiceInkApp:
         从文件加载词典数据。
 
         Returns:
-            词条字典列表
+            词条字典列表（转换为 DictionaryPanel 需要的格式）
         """
         dict_path = self._config.dictionary.path
         # 支持相对路径（相对于项目根目录）
@@ -639,13 +769,32 @@ class VoiceInkApp:
         try:
             with open(dict_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+
+            # 提取词条列表
+            raw_entries = []
             if isinstance(data, list):
-                return data
-            elif isinstance(data, dict) and "entries" in data:
-                return data["entries"]
-            else:
-                logger.warning("词典文件格式不正确: %s", dict_path)
-                return []
+                raw_entries = data
+            elif isinstance(data, dict):
+                # 支持 "terms" 或 "entries" 键
+                raw_entries = data.get("terms") or data.get("entries") or []
+
+            # 转换为 DictionaryPanel 需要的格式
+            entries = []
+            for item in raw_entries:
+                if isinstance(item, dict):
+                    # 兼容两种格式：term/word, aliases 可能是列表或字符串
+                    word = item.get("term") or item.get("word") or ""
+                    aliases = item.get("aliases", "")
+                    if isinstance(aliases, list):
+                        aliases = ", ".join(aliases)
+                    entries.append({
+                        "word": word,
+                        "aliases": aliases,
+                        "category": item.get("category", "通用"),
+                        "enabled": item.get("enabled", True),
+                    })
+
+            return entries
         except Exception as e:
             logger.error("加载词典文件失败: %s", e)
             return []
@@ -655,7 +804,7 @@ class VoiceInkApp:
         词典保存回调。
 
         Args:
-            entries: 修改后的词条列表
+            entries: 修改后的词条列表（DictionaryPanel 格式）
         """
         dict_path = self._config.dictionary.path
         if not os.path.isabs(dict_path):
@@ -665,10 +814,30 @@ class VoiceInkApp:
             # 确保目录存在
             Path(dict_path).parent.mkdir(parents=True, exist_ok=True)
 
-            with open(dict_path, "w", encoding="utf-8") as f:
-                json.dump(entries, f, ensure_ascii=False, indent=2)
+            # 转换为原始词典格式
+            terms = []
+            for item in entries:
+                aliases = item.get("aliases", "")
+                if isinstance(aliases, str):
+                    aliases = [a.strip() for a in aliases.split(",") if a.strip()]
+                terms.append({
+                    "term": item.get("word", ""),
+                    "aliases": aliases,
+                    "category": item.get("category", "通用"),
+                    "pinyin": "",
+                    "enabled": item.get("enabled", True),
+                })
 
-            logger.info("词典已保存: %d 条词条 -> %s", len(entries), dict_path)
+            # 保存为带版本信息的格式
+            data = {
+                "version": "1.0",
+                "terms": terms,
+            }
+
+            with open(dict_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+
+            logger.info("词典已保存: %d 条词条 -> %s", len(terms), dict_path)
 
             # 通知 Pipeline 重新加载词典（如果 Pipeline 支持）
             if self._pipeline is not None and hasattr(self._pipeline, 'reload_dictionary'):
@@ -704,10 +873,10 @@ class VoiceInkApp:
             except Exception as e:
                 logger.error("停止 Pipeline 时出错: %s", e)
 
-        # 2. 注销所有快捷键
+        # 2. 关闭快捷键管理器（注销所有热键 + 停止消息泵线程）
         try:
-            self._hotkey_manager.unregister_all()
-            logger.info("快捷键已全部注销")
+            self._hotkey_manager.shutdown()
+            logger.info("快捷键管理器已关闭")
         except Exception as e:
             logger.error("注销快捷键时出错: %s", e)
 

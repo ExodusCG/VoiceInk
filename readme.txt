@@ -1,173 +1,168 @@
 ============================================
-  VoiceInk - Windows Local Voice Input
-  Speak -> Recognize -> Polish -> Type
+  VoiceInk - Windows 本地语音输入工具
+  说话 -> 识别 -> 润色 -> 输入
 ============================================
 
-VoiceInk is a local voice input tool for Windows.
-Hold a hotkey, speak, release -- your words are automatically
-recognized (ASR), polished by a local LLM, and typed into any app.
+VoiceInk 是一款 Windows 本地语音输入工具。
+按住快捷键说话，松开后自动识别语音、LLM润色、输入到任意应用。
 
-Everything runs locally on your machine. No cloud, no subscription.
+所有处理均在本地完成，无需联网，保护隐私。
+无需安装 Visual C++ 运行时，开箱即用。
 
 
-1. SYSTEM REQUIREMENTS
+1. 系统要求
 ----------------------
-- Windows 10 / 11  (64-bit)
-- Python 3.10 or later  (https://www.python.org/downloads/)
-  * IMPORTANT: Check "Add Python to PATH" during installation
-- A working microphone
-- ~2 GB disk space  (for models and dependencies)
+- Windows 10 / 11 (64位)
+- Python 3.10 或更高版本 (https://www.python.org/downloads/)
+  * 重要：安装时勾选 "Add Python to PATH"
+- 麦克风
+- 约 1GB 磁盘空间 (含模型)
 
 
-2. QUICK START
+2. 快速开始
 --------------
-Step 1 -- Install
-  Double-click  setup.bat
-  It will:
-    - Create a Python virtual environment (.venv)
-    - Install all dependencies
-    - Check if ASR / LLM models exist
+第一步：安装
+  双击运行 setup.bat
+  首次安装约需 5-10 分钟（取决于网络速度）
 
-  First-time install takes 5-15 minutes depending on your network.
+第二步：启动
+  双击运行 start.bat
+  系统托盘会出现 VoiceInk 图标
 
-Step 2 -- Launch
-  Double-click  start.bat
-  A system tray icon will appear (bottom-right of taskbar).
-
-Step 3 -- Use
-  Hold  Right Alt  and speak into your microphone.
-  Release the key -- VoiceInk will:
-    1) Recognize your speech  (Paraformer ASR)
-    2) Correct with custom dictionary
-    3) Polish with local LLM  (Qwen3 0.6B)
-    4) Type the result into your active window
-
-  That's it!
+第三步：使用
+  按住 右Alt 键说话，松开后：
+    1) 语音识别 (SenseVoice ASR)
+    2) 词典纠错
+    3) LLM 润色 (Qwen3)
+    4) 自动输入到当前窗口
 
 
-3. DEFAULT HOTKEYS
+3. 快捷键
 ------------------
-  Right Alt (hold)     Push-to-Talk  (hold to record, release to process)
-  Ctrl+Shift+V         Toggle voice input on/off
+  右Alt (按住)        按住说话，松开识别
+  Ctrl+Shift+V       切换语音输入开关
 
 
-4. SYSTEM TRAY MENU
---------------------
-Right-click the VoiceInk tray icon to access:
-  - Settings        Adjust ASR, LLM, audio, hotkey, output options
-  - Dictionary      Add/edit custom correction terms
-  - Exit            Quit VoiceInk
+4. 语言支持
+------------------
+SenseVoice 支持多种语言，在 voiceink\config.yaml 中配置：
+
+  asr:
+    backend: sensevoice_onnx
+    language: auto    # 自动检测语言（推荐）
+
+支持的语言代码：
+  auto  - 自动检测
+  zh    - 中文
+  en    - 英文
+  ja    - 日语
+  ko    - 韩语
+  yue   - 粤语
 
 
-5. CONFIGURATION
+5. 配置文件
 ----------------
-Default config file:  voiceink\config.yaml
-User override:        %USERPROFILE%\.voiceink\config.yaml
+默认配置：voiceink\config.yaml
+用户配置：%USERPROFILE%\.voiceink\config.yaml (优先级更高)
 
-Key settings you may want to change:
+常用配置项：
 
-  [Hotkey]
-    app.hotkey_push_to_talk    Default: right alt
-    app.hotkey_toggle          Default: ctrl+shift+v
+  [快捷键]
+    app.hotkey_push_to_talk    默认: right alt
+    app.hotkey_toggle          默认: ctrl+shift+v
 
-  [ASR Engine]
-    asr.backend                Default: paraformer_onnx
-                               Options: paraformer_onnx, whisper_cpp, faster_whisper
+  [ASR 引擎]
+    asr.backend                默认: sensevoice_onnx
+                               可选: sensevoice_onnx, whisper_cpp, faster_whisper
 
-  [Language]
-    asr.language               Default: zh  (Chinese)
-                               Change to "en" for English with Whisper backends
+  [语言]
+    asr.language               默认: auto (自动检测)
+                               可选: auto/zh/en/ja/ko/yue
 
-  [LLM]
-    llm.backend                Default: llama_cpp  (local Qwen3 0.6B)
-                               Change to "api" to use cloud API (e.g. GPT-4o-mini)
-
-  [Output Method]
-    output.method              Default: keyboard  (simulated keystrokes)
+  [LLM 润色]
+    llm.backend                默认: llama_cpp (本地 Qwen3)
+                               可选: api (云端 API), disabled (禁用)
 
 
-6. CUSTOM DICTIONARY
+6. 自定义词典
 --------------------
-Edit  voiceink\custom_dictionary.json  to add correction terms.
-Example -- fix common ASR mistakes:
+编辑 voiceink\custom_dictionary.json 添加纠错词条：
 
   {
     "terms": [
-      {"wrong": "wei xin", "correct": "WeChat"},
-      {"wrong": "bo ke",   "correct": "blog"}
+      {"wrong": "wei xin", "correct": "微信"},
+      {"wrong": "bo ke",   "correct": "博客"}
     ]
   }
 
-You can also manage the dictionary through the tray menu -> Dictionary.
+也可通过托盘菜单 -> 词典 进行管理。
 
 
-7. MODEL DOWNLOAD
+7. 模型下载
 -----------------
-On first launch, VoiceInk will automatically download required models:
-  - Paraformer ASR model    (~200 MB, from ModelScope)
-  - Qwen3 0.6B LLM model   (~700 MB, GGUF format)
+首次启动会自动下载所需模型：
 
-Models are saved to the  models\  folder. This is a one-time download.
+  SenseVoice ASR 模型   ~170 MB (从 GitHub 下载)
+  Qwen3 0.6B LLM 模型   ~610 MB (从 HuggingFace 下载)
 
-If the download is slow, you can manually download models and place them in:
-  models\asr\       ASR model files
-  models\llm\       LLM model files  (Qwen3-0.6B-Q8_0.gguf)
+模型保存在 models\ 目录，只需下载一次。
+
+手动下载地址：
+  SenseVoice: https://github.com/k2-fsa/sherpa-onnx/releases
+  Qwen3:      https://huggingface.co/Qwen/Qwen3-0.6B-GGUF
 
 
-8. LOGS & TROUBLESHOOTING
+8. 常见问题
 --------------------------
-Log file:  %USERPROFILE%\.voiceink\logs\voiceink.log
+日志文件：%USERPROFILE%\.voiceink\logs\voiceink.log
 
-Common issues:
+Q: 提示 "Python not found"
+A: 安装 Python 3.10+ 并勾选 "Add Python to PATH"，然后重新运行 setup.bat
 
-  Q: "Python not found"
-  A: Install Python 3.10+ and check "Add Python to PATH" during install.
-     Then rerun setup.bat.
+Q: 没有录到声音
+A: 检查麦克风是否设为 Windows 默认录音设备
+   也可在 config.yaml 的 audio.device 指定设备名
 
-  Q: No sound is being captured
-  A: Check your microphone is set as the default recording device in
-     Windows Sound settings. You can also specify a device in config.yaml
-     under audio.device.
+Q: 识别不准确
+A: - 说话清晰，避免背景噪音
+   - 将常错的词添加到自定义词典
+   - 尝试指定语言（如 language: zh）而非 auto
 
-  Q: Recognition quality is poor
-  A: - Make sure you are using Paraformer (default) for Chinese input
-     - Speak clearly and avoid background noise
-     - Add frequently misrecognized words to the custom dictionary
+Q: 输入太慢或丢字
+A: 增大 config.yaml 中的 output.typing_delay_ms (默认 5ms)
 
-  Q: Text is typed too slowly or has errors
-  A: Adjust output.typing_delay_ms in config.yaml (default: 5 ms).
-     Increase the value if characters are being dropped.
-
-  Q: Model download fails
-  A: Check your internet connection. If behind a proxy, set the
-     HTTP_PROXY / HTTPS_PROXY environment variables before running setup.bat.
+Q: 模型下载失败
+A: 检查网络连接。如使用代理，设置环境变量：
+   set HTTP_PROXY=http://127.0.0.1:7890
+   set HTTPS_PROXY=http://127.0.0.1:7890
 
 
-9. FILE STRUCTURE
+9. 文件结构
 -----------------
   VoiceInk\
-  |-- setup.bat              Install script (run once)
-  |-- start.bat              Launch script (run every time)
-  |-- requirements.txt       Python dependencies
+  |-- setup.bat              安装脚本 (运行一次)
+  |-- start.bat              启动脚本 (每次运行)
+  |-- requirements.txt       Python 依赖
+  |-- readme.txt             本文件
   |-- scripts\
-  |   +-- check_deps.py      Dependency checker
+  |   +-- check_deps.py      依赖检查脚本
   +-- voiceink\
-      |-- main.py            Application entry point
-      |-- config.py          Configuration loader
-      |-- config.yaml        Default configuration
-      |-- custom_dictionary.json   Dictionary data
-      |-- asr\               Speech recognition backends
-      |-- core\              Audio capture, pipeline, text output
-      |-- dictionary\        Dictionary correction engine
-      |-- llm\               LLM polish backends
-      |-- ui\                System tray, settings, status indicator
-      +-- utils\             Hotkey, logger, model downloader
+      |-- main.py            程序入口
+      |-- config.yaml        默认配置
+      |-- custom_dictionary.json   自定义词典
+      |-- asr\               语音识别后端 (SenseVoice)
+      |-- llm\               LLM 润色后端 (Qwen3)
+      |-- core\              音频采集、处理管道
+      |-- ui\                系统托盘、设置界面
+      +-- utils\             工具函数
 
 
-10. UNINSTALL
+10. 卸载
 -------------
-Simply delete the entire VoiceInk folder.
-User data is stored in  %USERPROFILE%\.voiceink\  -- delete that too
-if you want a clean removal.
+删除 VoiceInk 整个文件夹即可。
+用户数据在 %USERPROFILE%\.voiceink\，如需完全清除也一并删除。
 
+
+============================================
+  GitHub: https://github.com/wolaiye945/VoiceInk
 ============================================

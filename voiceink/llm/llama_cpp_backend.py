@@ -186,7 +186,7 @@ class LlamaCppBackend(LLMBackend):
                     messages=messages,
                     temperature=self._config.temperature,  # 低温度 → 稳定输出
                     top_p=self._config.top_p,
-                    max_tokens=len(raw_text) * 4 + 300,  # 给足空间（含 think 标签）
+                    max_tokens=min(len(raw_text) * 3 + 50, 1024),  # 严控输出长度，防止幻觉
                     stop=[
                         "【",             # 防止模型重复生成 prompt 格式
                         "<|im_end|>",     # Qwen 系列模型的结束标记
@@ -223,6 +223,23 @@ class LlamaCppBackend(LLMBackend):
             logger.info(
                 f"[LlamaCpp] 润色: {len(raw_text)} 字 → {len(polished)} 字"
             )
+
+            # ---- 膨胀比防护：润色后文本不应大幅超过原文长度 ----
+            # 正常润色（加标点、纠错）最多膨胀 2 倍；超过 3 倍视为幻觉
+            max_ratio = 3.0
+            if len(raw_text) > 0 and len(polished) > len(raw_text) * max_ratio:
+                logger.warning(
+                    f"[LlamaCpp] 输出膨胀异常: {len(raw_text)} 字 → {len(polished)} 字 "
+                    f"(比率 {len(polished)/len(raw_text):.1f}x > {max_ratio}x)，"
+                    f"回退到原文"
+                )
+                return PolishResult(
+                    text=raw_text,
+                    raw_text=raw_text,
+                    success=False,
+                    error=f"输出膨胀异常 ({len(polished)/len(raw_text):.1f}x)，回退原文",
+                    tokens_used=tokens_used,
+                )
 
             return PolishResult(
                 text=polished,

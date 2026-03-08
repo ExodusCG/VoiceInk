@@ -210,6 +210,8 @@ class VoiceInkPipeline:
         self._context_buffer: str = ""
         self._context_lock = threading.Lock()
         self._max_context_length: int = 600  # 上下文最大字符数
+        self._context_last_update: float = 0.0  # 上下文最后更新时间戳
+        self._context_expire_seconds: float = 30.0  # 上下文过期时间（30秒）
 
         # ──────────────────────────────────────────────
         # 全局关闭标志
@@ -914,9 +916,19 @@ class VoiceInkPipeline:
             return raw_text
 
         try:
-            # 获取上下文
+            # 获取上下文（检查是否过期）
             with self._context_lock:
-                context = self._context_buffer if self._context_buffer else None
+                context = None
+                if self._context_buffer:
+                    elapsed = time.time() - self._context_last_update
+                    if elapsed > self._context_expire_seconds:
+                        logger.info(
+                            f"上下文已过期 ({elapsed:.0f}s > {self._context_expire_seconds:.0f}s)，自动清空"
+                        )
+                        self._context_buffer = ""
+                        self._context_last_update = 0.0
+                    else:
+                        context = self._context_buffer
 
             # 获取词典中的自定义词汇列表（供 LLM 参考）
             custom_terms = self._dictionary.get_active_terms()
@@ -948,6 +960,7 @@ class VoiceInkPipeline:
         将新输出的文本追加到上下文缓冲区。
 
         缓冲区有最大长度限制，超出时截断最早的内容。
+        同时记录更新时间戳，用于过期检测。
 
         Args:
             text: 新输出的文本
@@ -957,6 +970,7 @@ class VoiceInkPipeline:
 
         with self._context_lock:
             self._context_buffer += text
+            self._context_last_update = time.time()
 
             # 截断：只保留最后 max_context_length 个字符
             if len(self._context_buffer) > self._max_context_length:

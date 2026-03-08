@@ -3,12 +3,12 @@ sounddevice>=0.4.6
 numpy>=1.24
 pyyaml>=6.0
 
-# ASR 引擎 (至少安装一个)
-pywhispercpp>=0.2.0
-# faster-whisper>=1.0.0    # 可选: pip install faster-whisper
-funasr-onnx>=0.4.0          # Paraformer ONNX ASR 引擎 (中文精度更高)
-jieba>=0.42                  # funasr-onnx 传递依赖
-modelscope>=1.10             # ModelScope 模型下载
+# ASR 引擎 - SenseVoice (推荐，多语言，无需 VC++)
+sherpa-onnx>=1.12.0
+
+# 可选 ASR 引擎
+# pywhispercpp>=0.2.0      # Whisper.cpp
+# faster-whisper>=1.0.0    # Faster Whisper (CTranslate2)
 
 # LLM 推理
 llama-cpp-python>=0.2.80
@@ -17,7 +17,6 @@ openai>=1.0                  # 云端 API 客户端 (可选)
 # UI & 系统交互
 pystray>=0.19
 Pillow>=10.0
-keyboard>=0.13
 pyperclip>=1.8
 
 # 工具

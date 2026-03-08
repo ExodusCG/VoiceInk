@@ -117,6 +117,9 @@ class DictionaryPanel:
 
         self._create_window()
 
+        # 启动 tkinter 事件循环
+        self._parent.mainloop()
+
     # ------------------------------------------------------------------
     # 窗口构建
     # ------------------------------------------------------------------
@@ -130,6 +133,9 @@ class DictionaryPanel:
         win.resizable(True, True)
         win.minsize(500, 350)
 
+        # 窗口关闭时退出 mainloop
+        win.protocol("WM_DELETE_WINDOW", self._on_close)
+
         # 居中
         win.update_idletasks()
         x = (win.winfo_screenwidth() - 700) // 2
@@ -142,7 +148,7 @@ class DictionaryPanel:
 
         # 搜索
         ttk.Label(toolbar, text="搜索:").pack(side=tk.LEFT)
-        self._search_var = tk.StringVar()
+        self._search_var = tk.StringVar(master=self._parent)
         self._search_var.trace_add("write", self._on_search_changed)
         search_entry = ttk.Entry(toolbar, textvariable=self._search_var, width=25)
         search_entry.pack(side=tk.LEFT, padx=(4, 12))
@@ -430,11 +436,15 @@ class DictionaryPanel:
         logger.info("词典已保存 (%d 条)", len(data))
         if self._window:
             self._window.destroy()
+        if self._parent:
+            self._parent.quit()
 
     def _on_close(self):
         """关闭按钮"""
         if self._window:
             self._window.destroy()
+        if self._parent:
+            self._parent.quit()
 
 
 # ---------------------------------------------------------------------------

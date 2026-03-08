@@ -5,7 +5,7 @@ app:
   auto_start: false
   log_level: INFO
 audio:
-  device: default
+  device: auto
   sample_rate: 16000
   channels: 1
   chunk_duration_ms: 500
@@ -13,12 +13,12 @@ audio:
   silence_duration_ms: 800
   max_recording_seconds: 300
 asr:
-  backend: paraformer_onnx
+  backend: sensevoice_onnx
   model_size: large
   model_path: ''
   language: zh
   n_threads: 4
-  stream_interval_seconds: 2
+  stream_interval_seconds: 2.0
   beam_size: 5
 llm:
   backend: llama_cpp

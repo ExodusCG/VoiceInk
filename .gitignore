@@ -37,6 +37,23 @@ NUL
 .pytest_cache/
 htmlcov/
 .coverage
+test_release/
 
 # Release artifacts
 VoiceInk-release.zip
+VoiceInk_*.zip
+VoiceInk_*/
+*.apk
+
+# Screenshots and temporary files
+screenshot*.png
+pack.ps1
+
+# Rust implementation (separate repo)
+voiceink-rs/
+
+# APK server
+apk_server/
+
+# Development notes (may contain sensitive info)
+CLAUDE.md

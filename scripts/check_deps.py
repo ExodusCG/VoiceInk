@@ -7,7 +7,6 @@ ASR and LLM backends, and installs any that are missing via pip.
 
 import sys
 import subprocess
-import types
 from pathlib import Path
 
 import yaml
@@ -15,11 +14,9 @@ import yaml
 
 # Backend -> list of (import_name, pip_package)
 ASR_DEPS = {
+    "sensevoice_onnx": [("sherpa_onnx",   "sherpa-onnx")],   # pre-compiled, no VC++ needed
     "whisper_cpp":     [("pywhispercpp",  "pywhispercpp")],
     "faster_whisper":  [("faster_whisper", "faster-whisper")],
-    "paraformer_onnx": [("funasr_onnx",   "funasr-onnx"),
-                        ("jieba",          "jieba"),         # transitive dep of funasr-onnx
-                        ("modelscope",     "modelscope")],   # needed to download models
 }
 
 LLM_DEPS = {
@@ -42,29 +39,12 @@ CORE_DEPS = [
 
 
 def can_import(module_name: str) -> bool:
-    """Check if a module can be imported.
-
-    For funasr_onnx, injects a stub for sensevoice_bin to avoid
-    pulling in torch (which is only needed by SenseVoice, not Paraformer).
-    """
-    sv_key = "funasr_onnx.sensevoice_bin"
-    need_stub = (
-        module_name in ("funasr_onnx", "funasr_onnx.paraformer_bin")
-        and sv_key not in sys.modules
-    )
-    if need_stub:
-        stub = types.ModuleType(sv_key)
-        stub.SenseVoiceSmall = None
-        sys.modules[sv_key] = stub
-
+    """Check if a module can be imported."""
     try:
         __import__(module_name)
         return True
     except ImportError:
         return False
-    finally:
-        if need_stub and sv_key in sys.modules:
-            del sys.modules[sv_key]
 
 
 def pip_install(package: str) -> bool:
@@ -92,7 +72,7 @@ def main() -> int:
     with open(config_path, "r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
 
-    asr_backend = raw.get("asr", {}).get("backend", "whisper_cpp")
+    asr_backend = raw.get("asr", {}).get("backend", "sensevoice_onnx")
     llm_backend = raw.get("llm", {}).get("backend", "llama_cpp")
 
     print(f"  ASR backend : {asr_backend}")

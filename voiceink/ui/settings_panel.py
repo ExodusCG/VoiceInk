@@ -70,6 +70,10 @@ class SettingsPanel:
 
         self._create_window()
 
+        # 启动 tkinter 事件循环（阻塞直到窗口关闭）
+        # 由于我们创建了独立的 Tk()，需要运行 mainloop
+        self._parent.mainloop()
+
     # ------------------------------------------------------------------
     # 窗口创建
     # ------------------------------------------------------------------
@@ -82,6 +86,9 @@ class SettingsPanel:
         win.geometry("620x520")
         win.resizable(False, False)
         win.grab_set()  # 模态
+
+        # 窗口关闭时退出 mainloop
+        win.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
         # 尝试居中
         win.update_idletasks()
@@ -169,16 +176,18 @@ class SettingsPanel:
 
     def _make_var(self, key: str, value, var_type="str"):
         """创建 tkinter 变量并注册到 _vars"""
+        # 必须指定 master，否则变量可能关联到错误的 Tk 实例
+        master = self._parent
         if var_type == "str":
-            var = tk.StringVar(value=str(value))
+            var = tk.StringVar(master=master, value=str(value) if value is not None else "")
         elif var_type == "int":
-            var = tk.IntVar(value=int(value))
+            var = tk.IntVar(master=master, value=int(value) if value is not None else 0)
         elif var_type == "float":
-            var = tk.DoubleVar(value=float(value))
+            var = tk.DoubleVar(master=master, value=float(value) if value is not None else 0.0)
         elif var_type == "bool":
-            var = tk.BooleanVar(value=bool(value))
+            var = tk.BooleanVar(master=master, value=bool(value) if value is not None else False)
         else:
-            var = tk.StringVar(value=str(value))
+            var = tk.StringVar(master=master, value=str(value) if value is not None else "")
         self._vars[key] = var
         return var
 
@@ -194,16 +203,9 @@ class SettingsPanel:
         frame.columnconfigure(1, weight=1)
 
         row = 0
-        # 语言
-        v_lang = self._make_var("language", self._config.language)
-        self._add_row(frame, row, "识别语言:", v_lang, "combo",
-                      options=["auto", "zh", "en", "ja", "ko", "fr", "de", "es"],
-                      tooltip="auto=自动检测")
-        row += 1
-
         # 按住说话快捷键
         v_ptt = self._make_var("hotkey_push_to_talk", self._config.hotkey_push_to_talk)
-        self._add_row(frame, row, "按住说话快捷键:", v_ptt, tooltip="例: ctrl+shift+space")
+        self._add_row(frame, row, "按住说话快捷键:", v_ptt, tooltip="例: right alt, ctrl+shift+space")
         row += 1
 
         # 切换快捷键
@@ -236,7 +238,7 @@ class SettingsPanel:
         row = 0
         # 设备
         v_dev = self._make_var("audio.device", cfg.device)
-        self._add_row(frame, row, "输入设备:", v_dev, tooltip="default=系统默认")
+        self._add_row(frame, row, "输入设备:", v_dev, tooltip="auto=自动选择, 或设备ID")
         row += 1
 
         # 采样率
@@ -284,26 +286,28 @@ class SettingsPanel:
         # 后端
         v_backend = self._make_var("asr.backend", cfg.backend)
         self._add_row(frame, row, "ASR 后端:", v_backend, "combo",
-                      options=["whisper_cpp", "faster_whisper"])
+                      options=["sensevoice_onnx", "whisper_cpp", "faster_whisper"],
+                      tooltip="sensevoice_onnx=多语言推荐")
         row += 1
 
         # 模型大小
         v_model_size = self._make_var("asr.model_size", cfg.model_size)
         self._add_row(frame, row, "模型大小:", v_model_size, "combo",
-                      options=["tiny", "base", "small", "medium", "large-v2", "large-v3"],
-                      tooltip="越大越准，但越慢")
+                      options=["large", "tiny", "base", "small", "medium", "large-v2", "large-v3"],
+                      tooltip="SenseVoice 仅支持 large")
         row += 1
 
         # 模型路径
         v_model_path = self._make_var("asr.model_path", cfg.model_path)
-        self._add_row(frame, row, "模型路径:", v_model_path, "file")
+        self._add_row(frame, row, "模型路径:", v_model_path, "file",
+                      tooltip="留空则自动下载")
         row += 1
 
         # 语言
         v_lang = self._make_var("asr.language", cfg.language)
         self._add_row(frame, row, "语言:", v_lang, "combo",
-                      options=["auto", "zh", "en", "ja", "ko", "fr", "de"],
-                      tooltip="auto=自动检测")
+                      options=["zh", "auto", "en", "ja", "ko", "yue"],
+                      tooltip="zh=中文, auto=自动检测")
         row += 1
 
         # 线程数
@@ -525,6 +529,8 @@ class SettingsPanel:
                 self._on_save(new_config)
             if self._window:
                 self._window.destroy()
+            if self._parent:
+                self._parent.quit()
         except Exception as e:
             logger.error("保存设置失败: %s", e, exc_info=True)
             messagebox.showerror("保存失败", f"保存设置时出错:\n{e}")
@@ -533,6 +539,8 @@ class SettingsPanel:
         """取消按钮点击"""
         if self._window:
             self._window.destroy()
+        if self._parent:
+            self._parent.quit()
         logger.info("设置面板已取消")
 
     def _on_reset_defaults(self):

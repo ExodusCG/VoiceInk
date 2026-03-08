@@ -198,15 +198,16 @@ class SystemTray:
     def _build_menu(self) -> Menu:
         """构建右键上下文菜单"""
         return Menu(
-            # ---- 标题（禁用项） ----
-            MenuItem("VoiceInk 语音输入", None, enabled=False),
-
-            Menu.SEPARATOR,
-
             # ---- ASR 引擎子菜单 ----
             MenuItem(
                 "ASR 引擎",
                 Menu(
+                    MenuItem(
+                        "SenseVoice (推荐)",
+                        self._set_asr("sensevoice_onnx"),
+                        checked=self._is_asr("sensevoice_onnx"),
+                        radio=True,
+                    ),
                     MenuItem(
                         "Whisper.cpp",
                         self._set_asr("whisper_cpp"),
